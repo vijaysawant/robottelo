@@ -17,101 +17,169 @@
 :Upstream: No
 """
 import pytest
-# from robottelo.constants import PRDS
-# from robottelo.constants import REPO_TYPE
-# from robottelo.constants import REPOS
-# from robottelo.constants import REPOSET
-from robottelo.config import settings
+from robottelo.constants import PRDS
+from robottelo.constants import REPOS
+from robottelo.constants import REPOSET
+
+CUSTOM_REPOSET = {
+    'rhel8_8_bos': 'Red Hat Enterprise Linux 8 for x86_64 - BaseOS (RPMs)',
+    'rhel8_8_aps': 'Red Hat Enterprise Linux 8 for x86_64 - AppStream (RPMs)',
+    'rhel9_2_bos': 'Red Hat Enterprise Linux 9 for x86_64 - BaseOS (RPMs)',
+    'rhel9_2_aps': 'Red Hat Enterprise Linux 9 for x86_64 - AppStream (RPMs)',
+}
+CUSTOM_REPOS = {
+    'rhel8_8_bos': {
+        'id': 'rhel-8-for-x86_64-baseos-rpms',
+        'name': 'Red Hat Enterprise Linux 8 for x86_64 - BaseOS RPMs 8.8',
+        'releasever': '8.8',
+        'version': '8',
+        'reposet': CUSTOM_REPOSET['rhel8_8_bos'],
+        'product': PRDS['rhel8'],
+        'distro': 'rhel8',
+        'key': 'rhel8_bos',
+        'basearch': 'x86_64',
+    },
+    'rhel8_8_aps': {
+        'id': 'rhel-8-for-x86_64-appstream-rpms',
+        'name': 'Red Hat Enterprise Linux 8 for x86_64 - AppStream RPMs 8.8',
+        'releasever': '8.8',
+        'basearch': 'x86_64',
+        'version': '8',
+        'reposet': CUSTOM_REPOSET['rhel8_8_aps'],
+        'product': PRDS['rhel8'],
+        'distro': 'rhel8',
+        'key': 'rhel8_aps',
+    },
+    'rhel9_2_bos': {
+        'id': 'rhel-9-for-x86_64-baseos-rpms',
+        'name': 'Red Hat Enterprise Linux 9 for x86_64 - BaseOS RPMs 9.2',
+        'releasever': '9.2',
+        'version': '9',
+        'reposet': CUSTOM_REPOSET['rhel9_2_bos'],
+        'product': PRDS['rhel9'],
+        'distro': 'rhel9',
+        'key': 'rhel9_bos',
+        'basearch': 'x86_64',
+    },
+    'rhel9_2_aps': {
+        'id': 'rhel-9-for-x86_64-appstream-rpms',
+        'name': 'Red Hat Enterprise Linux 9 for x86_64 - AppStream RPMs 9.2',
+        'releasever': '9.2',
+        'basearch': 'x86_64',
+        'version': '9',
+        'reposet': CUSTOM_REPOSET['rhel9_2_aps'],
+        'product': PRDS['rhel9'],
+        'distro': 'rhel9',
+        'key': 'rhel9_aps',
+    }
+}
 
 @pytest.mark.no_containers
-@pytest.mark.parametrize('target_version', [("9.0")])
 @pytest.mark.rhel_ver_match('8')
-def test_upgrade_rhel8_to_rehl9(target_sat, module_org, module_product,
-                                module_cv, module_lce, module_ak_with_cv,
-                                rhel_contenthost, target_version):
-    """Test upgrade from RHEL8.7 to RHEL9.0 using LEAPP utility
-    :steps:
-        1. Import Manifest
-        2. Create content view, Activation key, Repositories and Sync created repo
-        3. Register the host
-        4. Enable RHEL8 BaseOS and AppStream repos
-        5. Run leapp pre-upgrade and leapp upgrade
-    :expectedresults:
-        1. Verify host upgraded successfully to RHEL9
-    """
-    # Preparing a Satellite-registered system
+def test_upgrade_rhel8_to_rehl9(target_sat, default_org, #module_entitlement_manifest_org
+              rhel_contenthost,
+              upload_manifest=False,
+              ):
     # 1. Import a subscription manifest (with RHEL 9 repositories into Satellite Server)
-    target_sat.upload_manifest(module_org)
-    # 2. Create content view, Activation key, Repositories and Sync created repo
-    cv = module_cv
-    ak = module_ak_with_cv
-
-    # rhel8_bos_repo = target_sat.api.Repository(
-    #     name=REPOS['rhel8_bos']['name'],
-    #     url=settings.repos.rhel8_os.baseos,
-    #     content_type=REPO_TYPE['yum'],
-    #     product=module_product
-    # ).create()
-    # rhel8_bos_repo.sync(timeout=600)
-    #
-    # rhel8_aps_repo = target_sat.api.Repository(
-    #     name=REPOS['rhel8_aps']['name'],
-    #     url=settings.repos.rhel8_os.appstream,
-    #     content_type=REPO_TYPE['yum'],
-    #     product=module_product
-    # ).create()
-    # rhel8_aps_repo.sync(timeout=600)
-    #
-    # rhel9_bos_repo = target_sat.api.Repository(
-    #     name=REPOS['rhel9_bos']['name'],
-    #     url=settings.repos.rhel9_os.baseos,
-    #     content_type=REPO_TYPE['yum'],
-    #     product=module_product
-    # ).create()
-    # rhel9_bos_repo.sync(timeout=600)
-    #
-    # rhel9_aps_repo = target_sat.api.Repository(
-    #     name=REPOS['rhel9_aps']['name'],
-    #     url=settings.repos.rhel9_os.appstream,
-    #     content_type=REPO_TYPE['yum'],
-    #     product=module_product
-    # ).create()
-    # rhel9_aps_repo.sync(timeout=600)
-
-    # # 3. Register Host
+    if upload_manifest and not target_sat.organization_has_manifest(default_org.id):
+        target_sat.upload_manifest(default_org)
+    # rhel_contenthost = rex_contenthost
+    # Enable rhel8/rhel9 bos, aps repository and add in content view
+    lc_env = target_sat.api.LifecycleEnvironment(organization=default_org).create()
+    c_view = target_sat.api.ContentView(organization=default_org).create()
+    all_repos = []
+    # for rh_repo_key in ['rhel8_8_bos', 'rhel8_8_aps', 'rhel9_2_bos', 'rhel9_2_aps']:
+    # # for rh_repo_key in ['rhel8_7_bos', 'rhel8_7_aps', 'rhel9_1_bos', 'rhel9_1_aps']:
+    #     if 'rhel8' in rh_repo_key:
+    #         prod = PRDS['rhel8']
+    #     else:
+    #         prod = PRDS['rhel9']
+    #     repo_id = target_sat.api_factory.enable_rhrepo_and_fetchid(
+    #         basearch='x86_64',
+    #         org_id=default_org.id,
+    #         product=prod,
+    #         repo=CUSTOM_REPOS[rh_repo_key]['name'],
+    #         reposet=CUSTOM_REPOSET[rh_repo_key],
+    #         releasever=CUSTOM_REPOS[rh_repo_key]['releasever'],
+    #     )
+    #     rh_repo = target_sat.api.Repository(id=repo_id).read()
+    #     all_repos.append(rh_repo)
+    #     # sync repo
+    #     rh_repo.sync(timeout=1800)
+    # c_view.repository = all_repos
+    # c_view = c_view.update(['repository'])
+    # Publish, promote content view to lce
+    c_view.publish()
+    cv_version = c_view.read().version[0]
+    cv_version.promote(data={'environment_ids': lc_env.id, 'force': True})
+    c_view = c_view.read()
+    # Create activation key
+    ak = target_sat.api.ActivationKey(
+        content_view=c_view,
+        environment=lc_env,
+        organization=default_org,
+    ).create()
+    # 3. Register Host
     rhel_contenthost.install_katello_ca(target_sat)
-    rhel_contenthost.register_contenthost(org=module_org.label, activation_key=ak.name)
+    rhel_contenthost.register_contenthost(org=default_org.label, activation_key=ak.name)
+    rhel_contenthost.add_rex_key(satellite=target_sat)
     assert rhel_contenthost.subscribed
+    # Verify target rhel version repositories has enabled on Satellite Server
+    cmd_out = target_sat.execute(
+        f"hammer repository list --search 'content_label ~ rhel-9' --content-view {c_view.name} "
+        f"--organization '{default_org.name}' --lifecycle-environment '{lc_env.name}'")
+    assert cmd_out.status == 0
+    assert ("AppStream RPMs 9" in cmd_out.stdout) and ("BaseOS RPMs 9" in cmd_out.stdout)
 
-    # Preupgrade check
-    # Remove directory if in-place upgrade already performed from RHEL7 to RHEL8
+    # Preupgrade conditions and check - Remove directory if in-place upgrade already performed from RHEL7 to RHEL8
     rhel_contenthost.run("rm -rf /root/tmp_leapp_py3")
-    # 4. Enable RHEL8 and RHEL9 repos for upgrade
-    # rhel8_contenthost.run("subscription-manager repos --enable rhel-8-for-x86_64-baseos-rpms")
-    # rhel8_contenthost.run("subscription-manager repos --enable rhel-8-for-x86_64-appstream-rpms")
 
+    rhel_old_ver = rhel_contenthost.run("cat /etc/redhat-release")
     # 5. Update all packages and install Leapp utility
     rhel_contenthost.run("yum clean all")
-    # rhel8_contenthost.run("yum repolist")
-    rhel_contenthost.create_custom_repos(
-        baseos=settings.repos.rhel8_os.baseos,
-        appstream=settings.repos.rhel8_os.appstream,
-    )
-    # rhel_contenthost.create_custom_repos(
-    #     baseos=settings.repos.rhel9_os.baseos,
-    #     appstream=settings.repos.rhel9_os.appstream,
-    # )
-    rhel_contenthost.run("subscription-manager release --set 8.7")
+    rhel_contenthost.run("yum repolist")
+
+    rhel_contenthost.run("subscription-manager release --set 8.8")    # it's not require
     result = rhel_contenthost.run("dnf update -y")
-    assert result.stdout == 0
-    rhel_contenthost.run("yum install leapp-upgrade")
-
-    rhel_contenthost.run(f"leapp preupgrade --target {target_version}")
+    assert result.status == 0
+    rhel_contenthost.run("yum install leapp-upgrade -y")
+    # rhel_contenthost.run("subscription-manager release --unset")    # it's not require
+    # Fixing inhibitors - download data files to avoid inhibitors
     rhel_contenthost.run('curl -k "https://gitlab.cee.redhat.com/oamg/leapp-data/-/raw/stage/data/{repomap.json,pes-events.json,device_driver_deprecation_data.json}" -o "/etc/leapp/files/#1"')
-    rhel_contenthost.run(f"leapp preupgrade --target {target_version}")
-    # TODO
-    # Download below LEAPP data to /etc/leapp/files/
-    # repomap.json, pes-events.json, device_driver_deprecation_data.json
+    rhel_contenthost.run('sed -i "s/^AllowZoneDrifting=.*/AllowZoneDrifting=no/" /etc/firewalld/firewalld.conf')
+    # 6.1 Run LEAPP-PREUPGRADE Job Template-
+    template_id = (target_sat.api.JobTemplate().search(query={'search': 'name="Run preupgrade via Leapp"'})[0].id)
+    job = target_sat.api.JobInvocation().run(
+        synchronous=False,
+        data={
+            'job_template_id': template_id,
+            'targeting_type': 'static_query',
+            'search_query': f'name = {rhel_contenthost.hostname}',
+        },
+    )
+    target_sat.wait_for_tasks(
+        f'resource_type = JobInvocation and resource_id = {job["id"]}', poll_timeout=1800
+    )
+    result = target_sat.api.JobInvocation(id=job['id']).read()
+    assert result.succeeded == 1
 
-    # get os version from hosts.py
-    # os_version function
+
+    # 6.2 Run LEAPP-UPGRADE Job Template-
+    template_id = (target_sat.api.JobTemplate().search(query={'search': 'name="Run upgrade via Leapp"'})[0].id)
+    job = target_sat.api.JobInvocation().run(
+        synchronous=False,
+        data={
+            'job_template_id': template_id,
+            'targeting_type': 'static_query',
+            'search_query': f'name = {rhel_contenthost.hostname}',
+            'inputs': {'Reboot': 'true'}
+        },
+    )
+    target_sat.wait_for_tasks(
+        f'resource_type = JobInvocation and resource_id = {job["id"]}', poll_timeout=1800
+    )
+    result = target_sat.api.JobInvocation(id=job['id']).read()
+    assert result.succeeded == 1
+    # target_sat.ping_host(host=rhel_contenthost.ip_addr)
+    rhel_new_ver = rhel_contenthost.run("cat /etc/redhat-release")
+    assert rhel_old_ver != rhel_new_ver

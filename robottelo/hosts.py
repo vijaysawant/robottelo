@@ -379,6 +379,10 @@ class ContentHost(Host, ContentHostMixins):
             downstream_repo = settings.repos.sattools_repo['rhel8']
         elif repo in (constants.REPOS['rhsc7']['id'], constants.REPOS['rhsc8']['id']):
             downstream_repo = settings.repos.capsule_repo
+        elif repo in (constants.REPOS['rhel8_bos']['id'], constants.REPOS['rhel8_aps']['id']):
+            downstream_repo = settings.repos.satclient_repo['rhel8']
+        elif repo in (constants.REPOS['rhel9_bos']['id'], constants.REPOS['rhel9_aps']['id']):
+            downstream_repo = settings.repos.satclient_repo['rhel9']
         if force or settings.robottelo.cdn or not downstream_repo:
             return self.execute(f'subscription-manager repos --enable {repo}')
 
@@ -464,6 +468,42 @@ class ContentHost(Host, ContentHostMixins):
         else:
             raise ValueError('not supported major version')
         return baseurl
+
+    def get_repo_url_rhel_version(self, rhel_ver=None):
+        """This function returns rhel 7,8,9 repo URL's as per rhel version,
+        :param rhel_ver: rhel host version, ex-7.9, 8.7, 9.0, etc. If rehl_ver is not pass it will find.
+        """
+        domain = settings.repos.rhel_os_repo_host
+        if rhel_ver is None:
+            major = self.os_version.major
+            minor = self.os_version.minor
+        else:
+            rhel_ver = str(rhel_ver).split('.')
+            major = int(rhel_ver[0])
+            minor = int(rhel_ver[1])
+
+        if major == 9 or major == 8:
+            baseurl_1 = (
+                f'{domain}/rhel-{major}/rel-eng/RHEL-{major}/'
+                f'latest-RHEL-{major}.{minor}.0/compose/BaseOS/x86_64/os/'
+            )
+            baseurl_2 = (
+                f'{domain}/rhel-{major}/rel-eng/RHEL-{major}/'
+                f'latest-RHEL-{major}.{minor}.0/compose/AppStream/x86_64/os/'
+            )
+
+        elif major == 7:
+            baseurl_1 = (
+                f'{domain}/rhel-{major}/rel-eng/RHEL-{major}/'
+                f'latest-RHEL-{major}.{minor}/compose/Server/x86_64/os/'
+            )
+            baseurl_2 = (
+                f'{domain}/rhel-{major}/rel-eng/EXTRAS-{major}/'
+                f'latest-EXTRAS-{major}.{minor}-RHEL-{major}/compose/Server/x86_64/os/'
+            )
+        else:
+            raise ValueError('not supported major version')
+        return baseurl_1, baseurl_2
 
     def install_katello_agent(self):
         """Install katello-agent on the virtual machine.

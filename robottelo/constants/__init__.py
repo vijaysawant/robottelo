@@ -277,6 +277,13 @@ PRDS = {
     'rhel9': 'Red Hat Enterprise Linux for x86_64',
 }
 
+
+SM_OVERALL_STATUS = {
+    'current': 'Overall Status: Current',
+    'invalid': 'Overall Status: Invalid',
+    'insufficient': 'Overall Status: Insufficient',
+    'unknown': 'Overall Status: Unknown',
+}
 REPOSET = {
     'rhct6': 'Red Hat CloudForms Tools for RHEL 6 (RPMs)',
     'rhel6': 'Red Hat Enterprise Linux 6 Server (RPMs)',
@@ -310,19 +317,16 @@ REPOSET = {
     },
     'rhel8_bos': 'Red Hat Enterprise Linux 8 for x86_64 - BaseOS (RPMs)',
     'rhel8_aps': 'Red Hat Enterprise Linux 8 for x86_64 - AppStream (RPMs)',
+    'rhel8_7_bos': 'Red Hat Enterprise Linux 8 for x86_64 - BaseOS (RPMs)',
+    'rhel8_7_aps': 'Red Hat Enterprise Linux 8 for x86_64 - AppStream (RPMs)',
     'rhel9_bos': 'Red Hat Enterprise Linux 9 for x86_64 - BaseOS (RPMs)',
     'rhel9_aps': 'Red Hat Enterprise Linux 9 for x86_64 - AppStream (RPMs)',
+    'rhel9_1_bos': 'Red Hat Enterprise Linux 9 for x86_64 - BaseOS (RPMs)',
+    'rhel9_1_aps': 'Red Hat Enterprise Linux 9 for x86_64 - AppStream (RPMs)',
     'rhel7_extra': 'Red Hat Enterprise Linux 7 Server - Extras (RPMs)',
     'rhel7_optional': 'Red Hat Enterprise Linux 7 Server - Optional (RPMs)',
     'rhel7_sup': 'Red Hat Enterprise Linux 7 Server - Supplementary (RPMs)',
     'rhst7_610': 'Red Hat Satellite Tools 6.10 (for RHEL 7 Server) (RPMs)',
-}
-
-SM_OVERALL_STATUS = {
-    'current': 'Overall Status: Current',
-    'invalid': 'Overall Status: Invalid',
-    'insufficient': 'Overall Status: Insufficient',
-    'unknown': 'Overall Status: Unknown',
 }
 
 REPOS = {
@@ -582,6 +586,28 @@ REPOS = {
         'distro': 'rhel8',
         'key': 'rhel8_aps',
     },
+    'rhel8_7_bos': {
+        'id': 'rhel-8-for-x86_64-baseos-rpms',
+        'name': 'Red Hat Enterprise Linux 8 for x86_64 - BaseOS RPMs 8.7',
+        'releasever': '8.7',
+        'version': '8',
+        'reposet': REPOSET['rhel8_bos'],
+        'product': PRDS['rhel8'],
+        'distro': 'rhel8',
+        'key': 'rhel8_bos',
+        'basearch': 'x86_64',
+    },
+    'rhel8_7_aps': {
+        'id': 'rhel-8-for-x86_64-appstream-rpms',
+        'name': 'Red Hat Enterprise Linux 8 for x86_64 - AppStream RPMs 8.7',
+        'releasever': '8.7',
+        'basearch': 'x86_64',
+        'version': '8',
+        'reposet': REPOSET['rhel8_aps'],
+        'product': PRDS['rhel8'],
+        'distro': 'rhel8',
+        'key': 'rhel8_aps',
+    },
     'rhel9_bos': {
         'id': 'rhel-9-for-x86_64-baseos-rpms',
         'name': 'Red Hat Enterprise Linux 9 for x86_64 - BaseOS RPMs 9',
@@ -597,6 +623,28 @@ REPOS = {
         'id': 'rhel-9-for-x86_64-appstream-rpms',
         'name': 'Red Hat Enterprise Linux 9 for x86_64 - AppStream RPMs 9',
         'releasever': '9',
+        'basearch': 'x86_64',
+        'version': '9',
+        'reposet': REPOSET['rhel9_aps'],
+        'product': PRDS['rhel9'],
+        'distro': 'rhel9',
+        'key': 'rhel9_aps',
+    },
+    'rhel9_1_bos': {
+        'id': 'rhel-9-for-x86_64-baseos-rpms',
+        'name': 'Red Hat Enterprise Linux 9 for x86_64 - BaseOS RPMs 9.1',
+        'releasever': '9.1',
+        'version': '9',
+        'reposet': REPOSET['rhel9_bos'],
+        'product': PRDS['rhel9'],
+        'distro': 'rhel9',
+        'key': 'rhel9_bos',
+        'basearch': 'x86_64',
+    },
+    'rhel9_1_aps': {
+        'id': 'rhel-9-for-x86_64-appstream-rpms',
+        'name': 'Red Hat Enterprise Linux 9 for x86_64 - AppStream RPMs 9.1',
+        'releasever': '9.1',
         'basearch': 'x86_64',
         'version': '9',
         'reposet': REPOSET['rhel9_aps'],
