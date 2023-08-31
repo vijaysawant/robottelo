@@ -18,11 +18,10 @@
 """
 import pytest
 from broker import Broker
-from wait_for import wait_for
 
+from robottelo.cli.activationkey import ActivationKey
 from robottelo.cli.repository import Repository
 from robottelo.config import settings
-from robottelo.constants import DEFAULT_ARCHITECTURE
 from robottelo.constants import PRDS
 from robottelo.hosts import ContentHost
 from robottelo.logging import logger
@@ -111,16 +110,32 @@ def function_leapp_ak(
     cvv = function_leapp_cv.read().version[0]
     cvv.promote(data={'environment_ids': module_leapp_lce.id, 'force': True})
     function_leapp_cv = function_leapp_cv.read()
-    return module_target_sat.api.ActivationKey(
+    ak = module_target_sat.api.ActivationKey(
         content_view=function_leapp_cv,
         environment=module_leapp_lce,
         organization=module_sca_manifest_org,
     ).create()
+    # In case of 'rhel7_server_extras' repos, need to enabled (overridden) repository
+    # to get content available on client host
+    if upgrade_path['source_version'].split('.')[0] == '7':
+        ActivationKey.content_override(
+            {
+                'id': ak.id,
+                'content-label': RHEL_REPOS['rhel7_server_extras']['id'],
+                'value': 'true',
+            }
+        )
+    return ak
 
 
 @pytest.fixture
 def verify_target_repo_on_satellite(
-    module_target_sat, function_leapp_cv, module_sca_manifest_org, module_leapp_lce, upgrade_path
+    module_target_sat,
+    function_leapp_cv,
+    module_sca_manifest_org,
+    module_leapp_lce,
+    upgrade_path,
+    function_leapp_ak,
 ):
     """Verify target rhel version repositories has enabled on Satellite Server"""
     target_rhel_major_ver = upgrade_path['target_version'].split('.')[0]
@@ -137,13 +152,15 @@ def verify_target_repo_on_satellite(
         assert RHEL_REPOS['rhel9_bos']['name'] in repo_names
         assert RHEL_REPOS['rhel9_aps']['name'] in repo_names
     else:
-        # placeholder for target_rhel - rhel-8
-        pass
+        assert RHEL_REPOS['rhel8_bos']['name'] in repo_names
+        assert RHEL_REPOS['rhel8_aps']['name'] in repo_names
 
 
 @pytest.fixture
 def register_host_with_satellite(
-    module_target_sat, custom_leapp_host, module_sca_manifest_org, function_leapp_ak
+    module_target_sat,
+    custom_leapp_host,
+    module_sca_manifest_org,
 ):
     """Register content host with satellite"""
     logger.info(
@@ -166,11 +183,11 @@ def precondition_check_upgrade_and_install_leapp_tool(custom_leapp_host):
     )
     source_rhel = str(custom_leapp_host.os_version)  # custom_leapp_host.deploy_rhel_version
     custom_leapp_host.run('rm -rf /root/tmp_leapp_py3')
-    custom_leapp_host.run('dnf clean all')
-    custom_leapp_host.run('dnf repolist')
+    custom_leapp_host.run('yum clean all')
+    custom_leapp_host.run('yum repolist')
     custom_leapp_host.run(f'subscription-manager release --set {source_rhel}')
-    assert custom_leapp_host.run('dnf update -y').status == 0
-    assert custom_leapp_host.run('dnf install leapp-upgrade -y').status == 0
+    assert custom_leapp_host.run('yum update -y').status == 0
+    assert custom_leapp_host.run('yum install leapp-upgrade -y').status == 0
 
 
 @pytest.fixture
@@ -178,17 +195,19 @@ def fix_inhibitors(custom_leapp_host):
     """Fix inhibitors to avoid hard stop of Leapp tool execution"""
     source_rhel_major_ver = str(custom_leapp_host.os_version.major)
     logger.info('Fixing inhibitors for source rhel version %s', source_rhel_major_ver)
+    # In case of Upgrade Path A - Rehl-8 to Rhel-9
     if source_rhel_major_ver == '8':
         # 1. Firewalld Configuration AllowZoneDrifting Is Unsupported
         custom_leapp_host.run(
             'sed -i "s/^AllowZoneDrifting=.*/AllowZoneDrifting=no/" /etc/firewalld/firewalld.conf'
         )
-        # 2. Newest installed kernel not in use
-        if custom_leapp_host.run('needs-restarting -r').status == 1:
-            custom_leapp_host.power_control(state='reboot', ensure=True)
     else:
-        # placeholder for source_rhel - 7
+        # In case of Upgrade Path A - Rehl-7 to Rhel-8
+        # Inhibitors could be fixed prior to run LEAPP-PREUPGRADE will place here
         pass
+    # Newest installed kernel not in use
+    if custom_leapp_host.run('needs-restarting -r').status == 1:
+        custom_leapp_host.power_control(state='reboot', ensure=True)
 
 
 @pytest.fixture
@@ -209,14 +228,15 @@ def leapp_sat_content(
     for rh_repo_key in RHEL_REPOS.keys():
         release_version = RHEL_REPOS[rh_repo_key]['releasever']
         if release_version in str(source) or release_version in target:
-            prod = rh_repo_key.split('_')[0]
+            # prod = RHEL_REPOS[rh_repo_key]['product'] #rh_repo_key.split('_')[0]
+            prod = 'rhel' if 'rhel7' in rh_repo_key else rh_repo_key.split('_')[0]
             if module_stash[synced_repos].get(rh_repo_key, None):
                 logger.info("Repo %s already synced, not syncing it", rh_repo_key)
             else:
                 logger.info('Enabling %s repository in product %s', rh_repo_key, prod)
                 module_stash[synced_repos][rh_repo_key] = True
                 repo_id = module_target_sat.api_factory.enable_rhrepo_and_fetchid(
-                    basearch=DEFAULT_ARCHITECTURE,
+                    basearch=custom_leapp_host.arch,
                     org_id=module_sca_manifest_org.id,
                     product=PRDS[prod],
                     repo=RHEL_REPOS[rh_repo_key]['name'],
@@ -231,10 +251,8 @@ def leapp_sat_content(
     function_leapp_cv.repository = all_repos
     function_leapp_cv = function_leapp_cv.update(['repository'])
     logger.info('Repos to be added to the AK: %s', all_repos)
-    logger.info('Assigning repositories to content view')
     # Publish, promote content view to lce
-    logger.info('Publishing content view')
-    logger.info('Promoting content view to lifecycle environment')
+    logger.info(f'Publish, promote cv - {function_leapp_cv.name} to lce - {module_leapp_lce.name}')
     function_leapp_cv.publish()
     cvv = function_leapp_cv.read().version[0]
     cvv.promote(data={'environment_ids': module_leapp_lce.id, 'force': True})
@@ -247,7 +265,6 @@ def custom_leapp_host(upgrade_path):
     deploy_args['deploy_rhel_version'] = upgrade_path['source_version']
     logger.info('Creating Leapp Host - RHEL %s', deploy_args)
     with Broker(
-        # nick='rhel8',
         workflow='deploy-rhel',
         host_class=ContentHost,
         deploy_rhel_version=upgrade_path['source_version'],
@@ -315,6 +332,21 @@ def test_leapp_upgrade_rhel(
     )
     result = module_target_sat.api.JobInvocation(id=job['id']).read()
     assert result.succeeded == 1
+    # In case of Upgrade Path A - Rehl-7 to Rhel-8
+    # Inhibitors should fix after running LEAPP-PREUPGRADE Job Template
+    if upgrade_path['source_version'].split('.')[0] == '7':
+        logger.info('Fixing inhibitory for upgrade path : %s', upgrade_path)
+        # 1. Leapp detected loaded kernel drivers which have been removed in RHEL 8
+        custom_leapp_host.run('rmmod floppy')
+        custom_leapp_host.run('rmmod pata_acpi')
+        # 2. Missing required answers in the answer file
+        leapp_report_path = "/var/log/leapp/leapp-report.txt"
+        grep_cmd = f"grep 'Title: Missing required answers in the answer file' {leapp_report_path}"
+        if custom_leapp_host.run(grep_cmd).status == 0:
+            custom_leapp_host.run(
+                'leapp answer --section remove_pam_pkcs11_module_check.confirm=True'
+            )
+
     # Run LEAPP-UPGRADE Job Template-
     template_id = (
         module_target_sat.api.JobTemplate()
@@ -336,17 +368,7 @@ def test_leapp_upgrade_rhel(
     result = module_target_sat.api.JobInvocation(id=job['id']).read()
     assert result.succeeded == 1
     # Wait for the host to be rebooted and SSH daemon to be started.
-    try:
-        wait_for(
-            custom_leapp_host.connect,
-            fail_condition=lambda res: res is not None,
-            handle_exception=True,
-            raise_original=True,
-            timeout=180,
-            delay=1,
-        )
-    except ConnectionRefusedError:
-        raise ConnectionRefusedError('Timed out waiting for SSH daemon to start on the host')
+    custom_leapp_host.wait_for_connection()
 
     custom_leapp_host.clean_cached_properties()
     new_ver = custom_leapp_host.os_version.major
