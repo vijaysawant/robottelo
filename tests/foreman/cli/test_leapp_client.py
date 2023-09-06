@@ -19,8 +19,6 @@
 import pytest
 from broker import Broker
 
-from robottelo.cli.activationkey import ActivationKey
-from robottelo.cli.repository import Repository
 from robottelo.config import settings
 from robottelo.constants import PRDS
 from robottelo.hosts import ContentHost
@@ -118,11 +116,11 @@ def function_leapp_ak(
     # In case of 'rhel7_server_extras' repos, need to enabled (overridden) repository
     # to get content available on client host
     if upgrade_path['source_version'].split('.')[0] == '7':
-        ActivationKey.content_override(
-            {
-                'id': ak.id,
-                'content-label': RHEL_REPOS['rhel7_server_extras']['id'],
-                'value': 'true',
+        ak.content_override(
+            data={
+                'content_overrides': [
+                    {'content_label': RHEL_REPOS['rhel7_server_extras']['id'], 'value': '1'}
+                ]
             }
         )
     return ak
@@ -139,7 +137,7 @@ def verify_target_repo_on_satellite(
 ):
     """Verify target rhel version repositories has enabled on Satellite Server"""
     target_rhel_major_ver = upgrade_path['target_version'].split('.')[0]
-    cmd_out = Repository.list(
+    cmd_out = module_target_sat.cli.Repository.list(
         {
             'search': f'content_label ~ rhel-{target_rhel_major_ver}',
             'content-view-id': function_leapp_cv.id,
@@ -161,6 +159,7 @@ def register_host_with_satellite(
     module_target_sat,
     custom_leapp_host,
     module_sca_manifest_org,
+    function_leapp_ak,
 ):
     """Register content host with satellite"""
     logger.info(
@@ -195,14 +194,14 @@ def fix_inhibitors(custom_leapp_host):
     """Fix inhibitors to avoid hard stop of Leapp tool execution"""
     source_rhel_major_ver = str(custom_leapp_host.os_version.major)
     logger.info('Fixing inhibitors for source rhel version %s', source_rhel_major_ver)
-    # In case of Upgrade Path A - Rehl-8 to Rhel-9
+    # In case of Upgrade Path - RHEL 8 to RHEL 9
     if source_rhel_major_ver == '8':
-        # 1. Firewalld Configuration AllowZoneDrifting Is Unsupported
+        # Inhibitor - Firewalld Configuration AllowZoneDrifting Is Unsupported
         custom_leapp_host.run(
             'sed -i "s/^AllowZoneDrifting=.*/AllowZoneDrifting=no/" /etc/firewalld/firewalld.conf'
         )
     else:
-        # In case of Upgrade Path A - Rehl-7 to Rhel-8
+        # In case of Upgrade Path - RHEL 7 to RHEL 8
         # Inhibitors could be fixed prior to run LEAPP-PREUPGRADE will place here
         pass
     # Newest installed kernel not in use
@@ -332,16 +331,23 @@ def test_leapp_upgrade_rhel(
     )
     result = module_target_sat.api.JobInvocation(id=job['id']).read()
     assert result.succeeded == 1
-    # In case of Upgrade Path A - Rehl-7 to Rhel-8
+    # In case of Upgrade Path - RHEL 7 to RHEL 8
     # Inhibitors should fix after running LEAPP-PREUPGRADE Job Template
-    if upgrade_path['source_version'].split('.')[0] == '7':
+    if upgrade_path['source_version'] == RHEL7_VER:
         logger.info('Fixing inhibitory for upgrade path : %s', upgrade_path)
-        # 1. Leapp detected loaded kernel drivers which have been removed in RHEL 8
-        custom_leapp_host.run('rmmod floppy')
-        custom_leapp_host.run('rmmod pata_acpi')
-        # 2. Missing required answers in the answer file
-        leapp_report_path = "/var/log/leapp/leapp-report.txt"
-        grep_cmd = f"grep 'Title: Missing required answers in the answer file' {leapp_report_path}"
+        leapp_report_path = '/var/log/leapp/leapp-report.txt'
+        # leapp-report.txt should be generated after leapp-preupgrade
+        assert custom_leapp_host.run(f'ls -a {leapp_report_path}').status == 0
+        # Inhibitor - Leapp detected loaded kernel drivers which have been removed in RHEL 8
+        grep_cmd = (
+            f'grep "Title: Leapp detected loaded kernel drivers which have been '
+            f'removed in RHEL 8. Upgrade cannot proceed." {leapp_report_path}'
+        )
+        if custom_leapp_host.run(grep_cmd).status == 0:
+            custom_leapp_host.run('rmmod floppy')
+            custom_leapp_host.run('rmmod pata_acpi')
+        # Inhibitor - Missing required answers in the answer file
+        grep_cmd = f'grep "Title: Missing required answers in the answer file" {leapp_report_path}'
         if custom_leapp_host.run(grep_cmd).status == 0:
             custom_leapp_host.run(
                 'leapp answer --section remove_pam_pkcs11_module_check.confirm=True'
