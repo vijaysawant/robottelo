@@ -200,11 +200,12 @@ def register_hosts(
     custom_repo,
     module_target_sat,
 ):
-    """Register hosts to Satellite"""
+    """Register hosts to Satellite and install katello-agent rpm."""
     for host in hosts:
         host.install_katello_ca(module_target_sat)
         host.register_contenthost(module_entitlement_manifest_org.name, module_ak_cv_lce.name)
         host.enable_repo(REPOS['rhst7']['id'])
+        host.install_katello_agent()
     return hosts
 
 
